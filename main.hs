@@ -22,7 +22,8 @@ main = do
 chomskyfy :: Grammar -> Grammar
 chomskyfy g@(Grammar nonTerminals terminals start rules) =
     let eliminatedStartSymbol = eliminateStartSymbol g
-    in eliminatedStartSymbol
+        eliminatedNonSolitaryTerminals = eliminateNonSolitaryTerminals eliminatedStartSymbol
+    in eliminatedNonSolitaryTerminals
 
 eliminateStartSymbol :: Grammar -> Grammar
 eliminateStartSymbol (Grammar nonTerminals terminals start rules) =
@@ -30,6 +31,24 @@ eliminateStartSymbol (Grammar nonTerminals terminals start rules) =
         newNonTerminals = Set.insert newStartSymbol nonTerminals
         newRules = Map.insert newStartSymbol (Set.singleton [Left start]) rules
     in Grammar newNonTerminals terminals newStartSymbol newRules
+
+eliminateNonSolitaryTerminals :: Grammar -> Grammar
+eliminateNonSolitaryTerminals g@(Grammar nonTerminals terminals start rules) =
+    let terminalReplacementPairs = zip (Set.toList terminals) $ map (("N"++).show) [0..]
+        terminalReplacements = Map.fromList terminalReplacementPairs
+        newRules = Map.map (Set.map $ replaceTerminals terminalReplacements) rules
+        rulesToAdd = Map.fromList $ map (\(t, nt) -> (nt, Set.singleton [Right t])) terminalReplacementPairs
+        newRules' = Map.union newRules rulesToAdd
+        nonTerminalsToAdd = map snd terminalReplacementPairs
+        newNonTerminals = Set.union nonTerminals $ Set.fromList nonTerminalsToAdd
+    in Grammar newNonTerminals terminals start newRules'
+
+replaceTerminals :: Map.Map NonTerminal Terminal -> [Either NonTerminal Terminal] -> [Either NonTerminal Terminal]
+replaceTerminals replacements = map replace where
+    replace x = case x of
+        Left n -> Left n
+        Right t -> let Just n = Map.lookup t replacements
+            in Left n
 
 parseGrammar :: String -> Grammar
 parseGrammar definitionStr =
