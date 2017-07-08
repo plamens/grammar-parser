@@ -1,4 +1,4 @@
-S -> U | V
-U -> TaU | TaT | UaT
+S -> U0 | V
+U0 -> TaU0 | TaT | U0aT
 V -> TbV | TbT | VbT
 T -> aTbT | bTaT | e

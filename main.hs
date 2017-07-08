@@ -6,25 +6,25 @@ import Data.List
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
-data Grammar = Grammar (Set.Set NonTerminal) (Set.Set Terminal) ProductionRules deriving (Show)
+data Grammar = Grammar (Set.Set NonTerminal) (Set.Set Terminal) NonTerminal ProductionRules deriving (Show)
 type ProductionRules = Map.Map NonTerminal (Set.Set [Either NonTerminal Terminal])
-type NonTerminal = Char
-type Terminal = Char
+type NonTerminal = String
+type Terminal = String
 
 main = do
     (grammarFileName:_) <- getArgs
     definitionStr <- readFile grammarFileName
     let grammar = parseGrammar definitionStr
     putStrLn $ show grammar
-    return ()
 
 parseGrammar :: String -> Grammar
 parseGrammar definitionStr =
     let ruleLines = lines definitionStr
-        rules = Map.fromList $ map parseLine ruleLines
+        parsedRules = map parseLine ruleLines
+        rules = Map.fromList $ parsedRules
         nonTerminals = Set.fromList (Map.keys rules)
         terminals = extractTerminals rules
-    in Grammar nonTerminals terminals rules
+    in Grammar nonTerminals terminals (fst.head $ parsedRules) rules
 
 extractTerminals :: ProductionRules -> Set.Set Terminal
 extractTerminals rules =
@@ -41,8 +41,20 @@ filterTerminals acc x = case x of
 
 parseLine :: String -> (NonTerminal, (Set.Set [Either NonTerminal Terminal]))
 parseLine line =
-    let ([nt]:_:rightSide) = words line
+    let (nt:_:rightSide) = words line
         destinations = filter (/="|") rightSide
-        parseDestination x = if isUpper x then Left x else Right x
-        destinationSet = Set.fromList $ map (map parseDestination) destinations
+        destinations' = map parseDestination destinations
+        terminalOrNonTerminal s@(x:_) = if isUpper x then Left s else Right s
+        destinationSet = Set.fromList $ map (map terminalOrNonTerminal) destinations'
     in (nt, destinationSet)
+
+parseDestination :: String -> [String]
+parseDestination "" = []
+parseDestination (x:xs) = parseDestination' [x] xs
+
+parseDestination' :: String -> String -> [String]
+parseDestination' x [] = [x]
+parseDestination' last (x:xs) =
+    if isNumber x
+        then parseDestination' (last ++ [x]) xs
+        else last:parseDestination' [x] xs
