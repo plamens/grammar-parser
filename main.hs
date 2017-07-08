@@ -16,6 +16,20 @@ main = do
     definitionStr <- readFile grammarFileName
     let grammar = parseGrammar definitionStr
     putStrLn $ show grammar
+    let nfGrammar = chomskyfy grammar
+    putStrLn $ show nfGrammar
+
+chomskyfy :: Grammar -> Grammar
+chomskyfy g@(Grammar nonTerminals terminals start rules) =
+    let eliminatedStartSymbol = eliminateStartSymbol g
+    in eliminatedStartSymbol
+
+eliminateStartSymbol :: Grammar -> Grammar
+eliminateStartSymbol (Grammar nonTerminals terminals start rules) =
+    let newStartSymbol = start ++ "0"
+        newNonTerminals = Set.insert newStartSymbol nonTerminals
+        newRules = Map.insert newStartSymbol (Set.singleton [Left start]) rules
+    in Grammar newNonTerminals terminals newStartSymbol newRules
 
 parseGrammar :: String -> Grammar
 parseGrammar definitionStr =
