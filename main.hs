@@ -20,11 +20,7 @@ main = do
     putStrLn $ show nfGrammar
 
 chomskyfy :: Grammar -> Grammar
-chomskyfy g@(Grammar nonTerminals terminals start rules) =
-    let eliminatedStartSymbol = eliminateStartSymbol g
-        eliminatedNonSolitaryTerminals = eliminateNonSolitaryTerminals eliminatedStartSymbol
-        eliminatedLongRhsRules = eliminateLongRhsRules eliminatedNonSolitaryTerminals
-    in eliminatedLongRhsRules
+chomskyfy = eliminateLongRhsRules . eliminateNonSolitaryTerminals . eliminateStartSymbol
 
 eliminateLongRhsRules :: Grammar -> Grammar
 eliminateLongRhsRules (Grammar nonTerminals terminals start rules) =
