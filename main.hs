@@ -111,7 +111,10 @@ parseLine line =
         destinations = filter (/="|") rightSide
         destinations' = map parseDestination destinations
         terminalOrNonTerminal s@(x:_) = if isUpper x then Left s else Right s
-        destinationSet = Set.fromList $ map (map terminalOrNonTerminal) destinations'
+        stripEpsilon x = case x of
+            [Right "e"] -> []
+            x -> x
+        destinationSet = Set.fromList $ map (stripEpsilon.(map terminalOrNonTerminal)) destinations'
     in (nt, destinationSet)
 
 parseDestination :: String -> [String]
@@ -134,7 +137,9 @@ toString (Grammar _ _ start rules) =
             Right t -> t
         ruleToString nt destinations =
             let destinationStrings = Set.toList $ Set.map destinationToString destinations
-                destinationToString dest = foldl1 (++) $ map terminalOrNonTerminalToString dest
+                destinationToString dest = if null dest
+                    then "e"
+                    else foldl1 (++) $ map terminalOrNonTerminalToString dest
             in nt ++ " -> " ++ (List.intercalate " | " destinationStrings)
         remeaningRulePairs = Map.toList remeaningRules
         firstRow = ruleToString start startRule
