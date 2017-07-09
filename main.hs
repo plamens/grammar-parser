@@ -23,7 +23,43 @@ chomskyfy :: Grammar -> Grammar
 chomskyfy g@(Grammar nonTerminals terminals start rules) =
     let eliminatedStartSymbol = eliminateStartSymbol g
         eliminatedNonSolitaryTerminals = eliminateNonSolitaryTerminals eliminatedStartSymbol
-    in eliminatedNonSolitaryTerminals
+        eliminatedLongRhsRules = eliminateLongRhsRules eliminatedNonSolitaryTerminals
+    in eliminatedLongRhsRules
+
+eliminateLongRhsRules :: Grammar -> Grammar
+eliminateLongRhsRules (Grammar nonTerminals terminals start rules) =
+    let rulesList = Map.toList rules
+        folder (rules, replacements, replacementIndex) (nt, destinationSet) =
+            let (newRuleSet, newReplacements, newReplacementIndex) = replaceLongRhsRules destinationSet replacements replacementIndex
+                newRules = Map.insert nt newRuleSet rules
+            in (newRules, newReplacements, newReplacementIndex)
+        (newRules, replacements, _) = foldl folder (Map.empty, [], 0) rulesList
+        newRules' = foldl (\rules ((nt1, nt2), newNt) -> Map.insert newNt (Set.singleton [Left nt1, Left nt2]) rules) newRules replacements
+        addedNonTerminals = map snd replacements
+        newNonTerminals = Set.union nonTerminals $ Set.fromList addedNonTerminals
+    in Grammar newNonTerminals terminals start newRules'
+
+replaceLongRhsRules :: Set.Set [Either NonTerminal Terminal] -> [((NonTerminal, NonTerminal), NonTerminal)] -> Int
+    -> (Set.Set [Either NonTerminal Terminal], [((NonTerminal, NonTerminal), NonTerminal)], Int)
+replaceLongRhsRules ruleSet replacements replacementIndex =
+    let folder (rules, replacements, replacementIndex) rhs =
+            let (shortenedRhs, newReplacements, newReplacementIndex) = shortenRhs rhs replacements replacementIndex
+                newRules = Set.insert shortenedRhs rules
+            in (newRules, newReplacements, newReplacementIndex)
+    in Set.foldl folder (Set.empty, replacements, replacementIndex) ruleSet
+
+shortenRhs :: [Either NonTerminal Terminal] -> [((NonTerminal, NonTerminal), NonTerminal)] -> Int
+    -> ([Either NonTerminal Terminal], [((NonTerminal, NonTerminal), NonTerminal)], Int)
+shortenRhs rhs replacements replacementRuleIndex =
+    if length rhs <= 2
+        then (rhs, replacements, replacementRuleIndex)
+        else
+            let (Left nt1:Left nt2:remeaningRhs) = rhs
+                newNonTerminal = "A" ++ show replacementRuleIndex
+                newReplacementIndex = replacementRuleIndex + 1
+                newReplacements = ((nt1, nt2), newNonTerminal):replacements
+                newRhs = Left newNonTerminal:remeaningRhs
+            in shortenRhs newRhs newReplacements newReplacementIndex
 
 eliminateStartSymbol :: Grammar -> Grammar
 eliminateStartSymbol (Grammar nonTerminals terminals start rules) =
