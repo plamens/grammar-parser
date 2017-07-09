@@ -5,6 +5,7 @@ import Data.Char
 import Data.List
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified Data.List as List
 
 data Grammar = Grammar (Set.Set NonTerminal) (Set.Set Terminal) NonTerminal ProductionRules deriving (Show)
 type ProductionRules = Map.Map NonTerminal (Set.Set [Either NonTerminal Terminal])
@@ -15,9 +16,9 @@ main = do
     (grammarFileName:_) <- getArgs
     definitionStr <- readFile grammarFileName
     let grammar = parseGrammar definitionStr
-    putStrLn $ show grammar
+    putStrLn $ toString grammar
     let nfGrammar = chomskyfy grammar
-    putStrLn $ show nfGrammar
+    putStrLn $ toString nfGrammar
 
 chomskyfy :: Grammar -> Grammar
 chomskyfy = eliminateLongRhsRules . eliminateNonSolitaryTerminals . eliminateStartSymbol
@@ -123,3 +124,19 @@ parseDestination' last (x:xs) =
     if isNumber x
         then parseDestination' (last ++ [x]) xs
         else last:parseDestination' [x] xs
+
+toString :: Grammar -> String
+toString (Grammar _ _ start rules) =
+    let Just startRule = Map.lookup start rules
+        remeaningRules = Map.delete start rules
+        terminalOrNonTerminalToString x = case x of
+            Left nt -> nt
+            Right t -> t
+        ruleToString nt destinations =
+            let destinationStrings = Set.toList $ Set.map destinationToString destinations
+                destinationToString dest = foldl1 (++) $ map terminalOrNonTerminalToString dest
+            in nt ++ " -> " ++ (List.intercalate " | " destinationStrings)
+        remeaningRulePairs = Map.toList remeaningRules
+        firstRow = ruleToString start startRule
+        otherRows = map (\(nt, destinations) -> ruleToString nt destinations) remeaningRulePairs
+    in Data.List.intercalate "\n" $ firstRow:otherRows
