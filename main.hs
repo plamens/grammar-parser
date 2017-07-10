@@ -21,7 +21,38 @@ main = do
     putStrLn $ toString nfGrammar
 
 chomskyfy :: Grammar -> Grammar
-chomskyfy = eliminateEpsilonRules . eliminateLongRhsRules . eliminateNonSolitaryTerminals . eliminateStartSymbol
+chomskyfy = eliminateUnitRules . eliminateEpsilonRules . eliminateLongRhsRules . eliminateNonSolitaryTerminals . eliminateStartSymbol
+
+eliminateUnitRules :: Grammar -> Grammar
+eliminateUnitRules (Grammar nonTerminals terminals start rules) =
+    let eliminatedUnitRules = eliminateFirstUnitRule rules : map (eliminateFirstUnitRule.fst) eliminatedUnitRules
+        noUnitRules = dropWhile ((== True).snd) eliminatedUnitRules
+    in Grammar nonTerminals terminals start ((fst.head) noUnitRules)
+
+eliminateFirstUnitRule :: ProductionRules -> (ProductionRules, Bool)
+eliminateFirstUnitRule rules =
+    let rulesList = rulesToList rules
+        unitRule = find (\(_, rhs) -> length rhs == 1 && isNonTerminal (head rhs)) rulesList
+        inlineUnitNt lNt rNt rulesList =
+            let ruleRemoved = filter (\x -> x /= (lNt, [Left rNt])) rulesList
+                rulesToAdd = filter (\(nt, rhs) -> nt == rNt) ruleRemoved
+                rulesToAdd' = map (\(_, rhs) -> (lNt, rhs)) rulesToAdd
+            in rulesToAdd' ++ ruleRemoved
+    in case unitRule of
+        Nothing -> (rules, False)
+        Just (lNt, [Left rNt]) -> (listToRules $ inlineUnitNt lNt rNt rulesList, True)
+
+isNonTerminal:: Either NonTerminal Terminal -> Bool
+isNonTerminal (Left _) = True
+isNonTerminal (Right _) = False
+
+rulesToList :: ProductionRules -> [(NonTerminal, [Either NonTerminal Terminal])]
+rulesToList rules = foldl (\acc (nt, set) -> Set.foldl (\acc rhs -> (nt, rhs):acc) acc set) [] $ Map.toList rules
+
+listToRules :: [(NonTerminal, [Either NonTerminal Terminal])] -> ProductionRules
+listToRules rulesList = foldl (\acc (nt, rhs) -> case Map.lookup nt acc of
+                                                        Nothing -> Map.insert nt (Set.singleton rhs) acc
+                                                        Just set -> Map.insert nt (Set.insert rhs set) acc) Map.empty rulesList
 
 eliminateEpsilonRules :: Grammar -> Grammar
 eliminateEpsilonRules (Grammar nonTerminals terminals start rules) =
