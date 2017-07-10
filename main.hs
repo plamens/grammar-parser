@@ -21,7 +21,47 @@ main = do
     putStrLn $ toString nfGrammar
 
 chomskyfy :: Grammar -> Grammar
-chomskyfy = eliminateLongRhsRules . eliminateNonSolitaryTerminals . eliminateStartSymbol
+chomskyfy = eliminateEpsilonRules . eliminateLongRhsRules . eliminateNonSolitaryTerminals . eliminateStartSymbol
+
+eliminateEpsilonRules :: Grammar -> Grammar
+eliminateEpsilonRules (Grammar nonTerminals terminals start rules) =
+    let eliminatedEpsilonRules = eliminateFirstEpsilonRule rules : map (eliminateFirstEpsilonRule.fst) eliminatedEpsilonRules
+        noEpsilonRules = dropWhile ((== True).snd) eliminatedEpsilonRules
+    in Grammar nonTerminals terminals start ((fst.head) noEpsilonRules)
+
+eliminateFirstEpsilonRule :: ProductionRules -> (ProductionRules, Bool)
+eliminateFirstEpsilonRule rules =
+    let epsilonRules = map fst $ filter ((/= False).snd) $ map (\(nt, ruleSet) -> (nt, isEpsilon ruleSet)) $ Map.toList rules
+        isEpsilon ruleSet = Set.member [] ruleSet || null ruleSet
+        inlineEpsilonNt nt rules =
+            let ruleRemoved = removeEpsilonNt nt rules
+                ruleSet = Map.lookup nt ruleRemoved
+            in case ruleSet of
+                Just set -> Map.map (inlineEpsilonNtInSet nt) rules
+                Nothing -> Map.map (removeNtInSet nt) rules
+        inlineAndRemoveEpsilonNt nt rules = removeEpsilonNt nt $ inlineEpsilonNt nt rules
+    in case epsilonRules of
+        [] -> (rules, False)
+        (epsilonNt:_) -> (inlineAndRemoveEpsilonNt epsilonNt rules, True)
+
+inlineEpsilonNt :: NonTerminal -> ProductionRules -> ProductionRules
+inlineEpsilonNt nt rules = Map.map (inlineEpsilonNtInSet nt) rules
+
+inlineEpsilonNtInSet :: NonTerminal -> Set.Set [Either NonTerminal Terminal] -> Set.Set [Either NonTerminal Terminal]
+inlineEpsilonNtInSet nt ruleSet =
+    let inlinedEpsilonSet = Set.map (\x -> filter (/= Left nt) x) ruleSet
+    in Set.union ruleSet inlinedEpsilonSet
+
+removeEpsilonNt :: NonTerminal -> ProductionRules -> ProductionRules
+removeEpsilonNt nt rules =
+    let Just ruleSet = Map.lookup nt rules
+        removedEpsilonRhs = Set.delete [] ruleSet
+    in if Set.null ruleSet
+        then Map.delete nt rules
+        else Map.insert nt removedEpsilonRhs rules
+
+removeNtInSet :: NonTerminal -> Set.Set [Either NonTerminal Terminal] -> Set.Set [Either NonTerminal Terminal]
+removeNtInSet nt ruleSet = Set.map (\x -> filter (/= Left nt) x) ruleSet
 
 eliminateLongRhsRules :: Grammar -> Grammar
 eliminateLongRhsRules (Grammar nonTerminals terminals start rules) =
