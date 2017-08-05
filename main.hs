@@ -1,6 +1,7 @@
 import System.Environment
 import System.IO
 import Control.Monad
+import Control.Monad.Trans.State
 import Data.Char
 import Data.List
 import qualified Data.Set as Set
@@ -95,39 +96,45 @@ removeNtInSet :: NonTerminal -> Set.Set [Either NonTerminal Terminal] -> Set.Set
 removeNtInSet nt ruleSet = Set.map (\x -> filter (/= Left nt) x) ruleSet
 
 eliminateLongRhsRules :: Grammar -> Grammar
-eliminateLongRhsRules (Grammar nonTerminals terminals start rules) =
+eliminateLongRhsRules g =
+    fst $ runState (eliminateLongRhsRules' g) 0
+
+eliminateLongRhsRules' :: Grammar -> State Int Grammar
+eliminateLongRhsRules' (Grammar nonTerminals terminals start rules) = do
     let rulesList = Map.toList rules
-        folder (rules, replacements, replacementIndex) (nt, destinationSet) =
-            let (newRuleSet, newReplacements, newReplacementIndex) = replaceLongRhsRules destinationSet replacements replacementIndex
-                newRules = Map.insert nt newRuleSet rules
-            in (newRules, newReplacements, newReplacementIndex)
-        (newRules, replacements, _) = foldl folder (Map.empty, [], 0) rulesList
-        newRules' = foldl (\rules ((nt1, nt2), newNt) -> Map.insert newNt (Set.singleton [Left nt1, Left nt2]) rules) newRules replacements
+        folder (rules, replacements) (nt, destinationSet) = do
+            (newRuleSet, newReplacements) <- replaceLongRhsRules destinationSet replacements
+            let newRules = Map.insert nt newRuleSet rules
+            return (newRules, newReplacements)
+    (newRules, replacements) <- foldM folder (Map.empty, []) rulesList
+    let newRules' = foldl (\rules ((nt1, nt2), newNt) -> Map.insert newNt (Set.singleton [Left nt1, Left nt2]) rules) newRules replacements
         addedNonTerminals = map snd replacements
         newNonTerminals = Set.union nonTerminals $ Set.fromList addedNonTerminals
-    in Grammar newNonTerminals terminals start newRules'
+    return (Grammar newNonTerminals terminals start newRules')
 
-replaceLongRhsRules :: Set.Set [Either NonTerminal Terminal] -> [((NonTerminal, NonTerminal), NonTerminal)] -> Int
-    -> (Set.Set [Either NonTerminal Terminal], [((NonTerminal, NonTerminal), NonTerminal)], Int)
-replaceLongRhsRules ruleSet replacements replacementIndex =
-    let folder (rules, replacements, replacementIndex) rhs =
-            let (shortenedRhs, newReplacements, newReplacementIndex) = shortenRhs rhs replacements replacementIndex
-                newRules = Set.insert shortenedRhs rules
-            in (newRules, newReplacements, newReplacementIndex)
-    in Set.foldl folder (Set.empty, replacements, replacementIndex) ruleSet
+replaceLongRhsRules :: Set.Set [Either NonTerminal Terminal] -> [((NonTerminal, NonTerminal), NonTerminal)]
+    -> State Int (Set.Set [Either NonTerminal Terminal], [((NonTerminal, NonTerminal), NonTerminal)])
+replaceLongRhsRules ruleSet replacements = do
+    let folder (rules, replacements) rhs = do
+            (shortenedRhs, newReplacements) <- shortenRhs rhs replacements
+            let newRules = Set.insert shortenedRhs rules
+            return (newRules, newReplacements)
+        rulesList = Set.toList ruleSet
+    foldM folder (Set.empty, replacements) rulesList
 
-shortenRhs :: [Either NonTerminal Terminal] -> [((NonTerminal, NonTerminal), NonTerminal)] -> Int
-    -> ([Either NonTerminal Terminal], [((NonTerminal, NonTerminal), NonTerminal)], Int)
-shortenRhs rhs replacements replacementRuleIndex =
+shortenRhs :: [Either NonTerminal Terminal] -> [((NonTerminal, NonTerminal), NonTerminal)]
+    -> State Int ([Either NonTerminal Terminal], [((NonTerminal, NonTerminal), NonTerminal)])
+shortenRhs rhs replacements =
     if length rhs <= 2
-        then (rhs, replacements, replacementRuleIndex)
-        else
+        then return (rhs, replacements)
+        else do
             let (Left nt1:Left nt2:remeaningRhs) = rhs
-                newNonTerminal = "A" ++ show replacementRuleIndex
-                newReplacementIndex = replacementRuleIndex + 1
-                newReplacements = ((nt1, nt2), newNonTerminal):replacements
+            replacementRuleIndex <- get
+            let newNonTerminal = "A" ++ show replacementRuleIndex
+            put (replacementRuleIndex + 1)
+            let newReplacements = ((nt1, nt2), newNonTerminal):replacements
                 newRhs = Left newNonTerminal:remeaningRhs
-            in shortenRhs newRhs newReplacements newReplacementIndex
+            shortenRhs newRhs newReplacements
 
 eliminateStartSymbol :: Grammar -> Grammar
 eliminateStartSymbol (Grammar nonTerminals terminals start rules) =
