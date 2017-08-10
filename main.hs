@@ -8,7 +8,7 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.List as List
 
-data Grammar = Grammar [NonTerminal] (Set.Set Terminal) NonTerminal ProductionRules deriving (Show)
+data Grammar = Grammar [NonTerminal] [Terminal] NonTerminal ProductionRules deriving (Show)
 type ProductionRules = Map.Map NonTerminal (Set.Set [Either NonTerminal Terminal])
 type NonTerminal = String
 type Terminal = String
@@ -145,7 +145,7 @@ eliminateStartSymbol (Grammar nonTerminals terminals start rules) =
 
 eliminateNonSolitaryTerminals :: Grammar -> Grammar
 eliminateNonSolitaryTerminals g@(Grammar nonTerminals terminals start rules) =
-    let terminalReplacementPairs = zip (Set.toList terminals) $ map (("N"++).show) [0..]
+    let terminalReplacementPairs = zip terminals $ map (("N"++).show) [0..]
         terminalReplacements = Map.fromList terminalReplacementPairs
         newRules = Map.map (Set.map $ replaceTerminals terminalReplacements) rules
         rulesToAdd = Map.fromList $ map (\(t, nt) -> (nt, Set.singleton [Right t])) terminalReplacementPairs
@@ -170,13 +170,13 @@ parseGrammar definitionStr =
         terminals = extractTerminals rules
     in Grammar nonTerminals terminals (fst.head $ parsedRules) rules
 
-extractTerminals :: ProductionRules -> Set.Set Terminal
+extractTerminals :: ProductionRules -> [Terminal]
 extractTerminals rules =
     let rightSides = Map.elems rules
         rightSidesSet = foldl1 Set.union rightSides
         joinedRightSide = Set.foldl (++) [] rightSidesSet
         terminals = foldl filterTerminals [] joinedRightSide
-    in Set.fromList terminals
+    in nub terminals
 
 filterTerminals :: [a] -> Either b a -> [a]
 filterTerminals acc x = case x of
