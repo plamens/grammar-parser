@@ -4,6 +4,7 @@ import Control.Monad
 import Control.Monad.Trans.State
 import Data.Char
 import Data.List
+import Data.Function
 import qualified Data.Map as Map
 
 data Grammar = Grammar [NonTerminal] [Terminal] NonTerminal ProductionRules deriving (Show)
@@ -56,17 +57,17 @@ listToRules rulesList = foldl (\acc (nt, rhs) -> case Map.lookup nt acc of
 
 eliminateEpsilonRules :: Grammar -> Grammar
 eliminateEpsilonRules (Grammar nonTerminals terminals start rules) =
-    let eliminatedEpsilonRules = eliminateFirstEpsilonRule rules : map (eliminateFirstEpsilonRule.fst) eliminatedEpsilonRules
-        noEpsilonRules = dropWhile ((== True).snd) eliminatedEpsilonRules
-    in Grammar nonTerminals terminals start ((fst.head) noEpsilonRules)
+    Grammar nonTerminals terminals start (eliminateEpsilonRules' rules)
 
-eliminateFirstEpsilonRule :: ProductionRules -> (ProductionRules, Bool)
-eliminateFirstEpsilonRule rules =
+eliminateEpsilonRules' :: ProductionRules -> ProductionRules
+eliminateEpsilonRules' = fix eliminateFirstEpsilonRule
+
+eliminateFirstEpsilonRule f rules =
     let epsilonRules = map fst $ filter ((/= False).snd) $ map (\(nt, rulesList) -> (nt, isEpsilon rulesList)) $ Map.toList rules
         inlineAndRemoveEpsilonNt nt rules' = removeEpsilonNt nt $ inlineEpsilonNt nt rules'
     in case epsilonRules of
-        [] -> (rules, False)
-        (epsilonNt:_) -> (inlineAndRemoveEpsilonNt epsilonNt rules, True)
+        [] -> rules
+        (epsilonNt:_) -> f $ inlineAndRemoveEpsilonNt epsilonNt rules
 
 isEpsilon :: [RightSide] -> Bool
 isEpsilon rightSides = elem [] rightSides || null rightSides
