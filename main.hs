@@ -5,7 +5,6 @@ import Control.Monad.Trans.State
 import Data.Char
 import Data.List
 import qualified Data.Map as Map
-import qualified Data.List as List
 
 data Grammar = Grammar [NonTerminal] [Terminal] NonTerminal ProductionRules deriving (Show)
 type ProductionRules = Map.Map NonTerminal [RightSide]
@@ -70,26 +69,26 @@ eliminateFirstEpsilonRule rules =
         (epsilonNt:_) -> (inlineAndRemoveEpsilonNt epsilonNt rules, True)
 
 isEpsilon :: [RightSide] -> Bool
-isEpsilon rulesList = elem [] rulesList || null rulesList
+isEpsilon rightSides = elem [] rightSides || null rightSides
 
 inlineEpsilonNt :: NonTerminal -> ProductionRules -> ProductionRules
 inlineEpsilonNt nt rules =
     let ruleRemoved = removeEpsilonNt nt rules
-        rulesList = Map.lookup nt ruleRemoved
-    in case rulesList of
-        Just list -> Map.map (inlineEpsilonNt' nt) rules
+        rightSides = Map.lookup nt ruleRemoved
+    in case rightSides of
+        Just _ -> Map.map (inlineEpsilonNt' nt) rules
         Nothing -> Map.map (removeNt nt) rules
 
 inlineEpsilonNt' :: NonTerminal -> [RightSide] -> [RightSide]
 inlineEpsilonNt' nt rules =
     let inlinedEpsilonRightSides = map (\x -> filter (/= Left nt) x) rules
-    in List.union rules inlinedEpsilonRightSides
+    in union rules inlinedEpsilonRightSides
 
 removeEpsilonNt :: NonTerminal -> ProductionRules -> ProductionRules
 removeEpsilonNt nt rules =
     let Just rightSides = Map.lookup nt rules
-        removedEpsilonRhs = List.delete [] rightSides
-    in if List.null rightSides
+        removedEpsilonRhs = delete [] rightSides
+    in if null rightSides
         then Map.delete nt rules
         else Map.insert nt removedEpsilonRhs rules
 
@@ -110,7 +109,7 @@ eliminateLongRhsRules' (Grammar nonTerminals terminals start rules) = do
     (newRules, replacements) <- foldM folder (Map.empty, []) rulesList
     let newRules' = foldl (\rules ((nt1, nt2), newNt) -> Map.insert newNt [[Left nt1, Left nt2]] rules) newRules replacements
         addedNonTerminals = map snd replacements
-        newNonTerminals = List.union nonTerminals addedNonTerminals
+        newNonTerminals = union nonTerminals addedNonTerminals
     return (Grammar newNonTerminals terminals start newRules')
 
 replaceLongRhsRules :: [RightSide] -> [((NonTerminal, NonTerminal), NonTerminal)]
@@ -151,7 +150,7 @@ eliminateNonSolitaryTerminals g@(Grammar nonTerminals terminals start rules) =
         rulesToAdd = Map.fromList $ map (\(t, nt) -> (nt, [[Right t]])) terminalReplacementPairs
         newRules' = Map.union newRules rulesToAdd
         nonTerminalsToAdd = map snd terminalReplacementPairs
-        newNonTerminals = List.union nonTerminals nonTerminalsToAdd
+        newNonTerminals = union nonTerminals nonTerminalsToAdd
     in Grammar newNonTerminals terminals start newRules'
 
 replaceTerminals :: Map.Map NonTerminal Terminal -> RightSide -> RightSide
@@ -173,8 +172,7 @@ parseGrammar definitionStr =
 extractTerminals :: ProductionRules -> [Terminal]
 extractTerminals rules =
     let rightSides = Map.elems rules
-        rightSidesList = concat rightSides
-        joinedRightSide = concat rightSidesList
+        joinedRightSide = concat.concat $ rightSides
         terminals = foldl filterTerminals [] joinedRightSide
     in nub terminals
 
@@ -218,8 +216,8 @@ toString (Grammar _ _ start rules) =
                 destinationToString dest = if null dest
                     then "e"
                     else foldl1 (++) $ map terminalOrNonTerminalToString dest
-            in nt ++ " -> " ++ (List.intercalate " | " destinationStrings)
+            in nt ++ " -> " ++ (intercalate " | " destinationStrings)
         remeaningRulePairs = Map.toList remeaningRules
         firstRow = ruleToString start startRule
         otherRows = map (\(nt, destinations) -> ruleToString nt destinations) remeaningRulePairs
-    in Data.List.intercalate "\n" $ firstRow:otherRows
+    in intercalate "\n" $ firstRow:otherRows
