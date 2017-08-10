@@ -8,7 +8,7 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.List as List
 
-data Grammar = Grammar (Set.Set NonTerminal) (Set.Set Terminal) NonTerminal ProductionRules deriving (Show)
+data Grammar = Grammar [NonTerminal] (Set.Set Terminal) NonTerminal ProductionRules deriving (Show)
 type ProductionRules = Map.Map NonTerminal (Set.Set [Either NonTerminal Terminal])
 type NonTerminal = String
 type Terminal = String
@@ -109,7 +109,7 @@ eliminateLongRhsRules' (Grammar nonTerminals terminals start rules) = do
     (newRules, replacements) <- foldM folder (Map.empty, []) rulesList
     let newRules' = foldl (\rules ((nt1, nt2), newNt) -> Map.insert newNt (Set.singleton [Left nt1, Left nt2]) rules) newRules replacements
         addedNonTerminals = map snd replacements
-        newNonTerminals = Set.union nonTerminals $ Set.fromList addedNonTerminals
+        newNonTerminals = List.union nonTerminals addedNonTerminals
     return (Grammar newNonTerminals terminals start newRules')
 
 replaceLongRhsRules :: Set.Set [Either NonTerminal Terminal] -> [((NonTerminal, NonTerminal), NonTerminal)]
@@ -139,7 +139,7 @@ shortenRhs rhs replacements =
 eliminateStartSymbol :: Grammar -> Grammar
 eliminateStartSymbol (Grammar nonTerminals terminals start rules) =
     let newStartSymbol = start ++ "0"
-        newNonTerminals = Set.insert newStartSymbol nonTerminals
+        newNonTerminals = newStartSymbol:nonTerminals
         newRules = Map.insert newStartSymbol (Set.singleton [Left start]) rules
     in Grammar newNonTerminals terminals newStartSymbol newRules
 
@@ -151,7 +151,7 @@ eliminateNonSolitaryTerminals g@(Grammar nonTerminals terminals start rules) =
         rulesToAdd = Map.fromList $ map (\(t, nt) -> (nt, Set.singleton [Right t])) terminalReplacementPairs
         newRules' = Map.union newRules rulesToAdd
         nonTerminalsToAdd = map snd terminalReplacementPairs
-        newNonTerminals = Set.union nonTerminals $ Set.fromList nonTerminalsToAdd
+        newNonTerminals = List.union nonTerminals nonTerminalsToAdd
     in Grammar newNonTerminals terminals start newRules'
 
 replaceTerminals :: Map.Map NonTerminal Terminal -> [Either NonTerminal Terminal] -> [Either NonTerminal Terminal]
@@ -166,7 +166,7 @@ parseGrammar definitionStr =
     let ruleLines = lines definitionStr
         parsedRules = map parseLine ruleLines
         rules = Map.fromList $ parsedRules
-        nonTerminals = Set.fromList (Map.keys rules)
+        nonTerminals = Map.keys rules
         terminals = extractTerminals rules
     in Grammar nonTerminals terminals (fst.head $ parsedRules) rules
 
