@@ -4,14 +4,14 @@ import Control.Monad
 import Control.Monad.Trans.State
 import Data.Char
 import Data.List
-import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.List as List
 
 data Grammar = Grammar [NonTerminal] [Terminal] NonTerminal ProductionRules deriving (Show)
-type ProductionRules = Map.Map NonTerminal (Set.Set [Either NonTerminal Terminal])
+type ProductionRules = Map.Map NonTerminal [RightSide]
 type NonTerminal = String
 type Terminal = String
+type RightSide = [Either NonTerminal Terminal]
 
 main = do
     (grammarFileName:_) <- getArgs
@@ -47,13 +47,13 @@ isNonTerminal:: Either NonTerminal Terminal -> Bool
 isNonTerminal (Left _) = True
 isNonTerminal (Right _) = False
 
-rulesToList :: ProductionRules -> [(NonTerminal, [Either NonTerminal Terminal])]
-rulesToList rules = foldl (\acc (nt, set) -> Set.foldl (\acc rhs -> (nt, rhs):acc) acc set) [] $ Map.toList rules
+rulesToList :: ProductionRules -> [(NonTerminal, RightSide)]
+rulesToList rules = foldl (\acc (nt, list) -> foldl (\acc rhs -> (nt, rhs):acc) acc list) [] $ Map.toList rules
 
-listToRules :: [(NonTerminal, [Either NonTerminal Terminal])] -> ProductionRules
+listToRules :: [(NonTerminal, RightSide)] -> ProductionRules
 listToRules rulesList = foldl (\acc (nt, rhs) -> case Map.lookup nt acc of
-                                                        Nothing -> Map.insert nt (Set.singleton rhs) acc
-                                                        Just set -> Map.insert nt (Set.insert rhs set) acc) Map.empty rulesList
+                                                        Nothing -> Map.insert nt [rhs] acc
+                                                        Just list -> Map.insert nt (rhs:list) acc) Map.empty rulesList
 
 eliminateEpsilonRules :: Grammar -> Grammar
 eliminateEpsilonRules (Grammar nonTerminals terminals start rules) =
@@ -63,37 +63,38 @@ eliminateEpsilonRules (Grammar nonTerminals terminals start rules) =
 
 eliminateFirstEpsilonRule :: ProductionRules -> (ProductionRules, Bool)
 eliminateFirstEpsilonRule rules =
-    let epsilonRules = map fst $ filter ((/= False).snd) $ map (\(nt, ruleSet) -> (nt, isEpsilon ruleSet)) $ Map.toList rules
-        isEpsilon ruleSet = Set.member [] ruleSet || null ruleSet
-        inlineEpsilonNt nt rules =
-            let ruleRemoved = removeEpsilonNt nt rules
-                ruleSet = Map.lookup nt ruleRemoved
-            in case ruleSet of
-                Just set -> Map.map (inlineEpsilonNtInSet nt) rules
-                Nothing -> Map.map (removeNtInSet nt) rules
-        inlineAndRemoveEpsilonNt nt rules = removeEpsilonNt nt $ inlineEpsilonNt nt rules
+    let epsilonRules = map fst $ filter ((/= False).snd) $ map (\(nt, rulesList) -> (nt, isEpsilon rulesList)) $ Map.toList rules
+        inlineAndRemoveEpsilonNt nt rules' = removeEpsilonNt nt $ inlineEpsilonNt nt rules'
     in case epsilonRules of
         [] -> (rules, False)
         (epsilonNt:_) -> (inlineAndRemoveEpsilonNt epsilonNt rules, True)
 
-inlineEpsilonNt :: NonTerminal -> ProductionRules -> ProductionRules
-inlineEpsilonNt nt rules = Map.map (inlineEpsilonNtInSet nt) rules
+isEpsilon :: [RightSide] -> Bool
+isEpsilon rulesList = elem [] rulesList || null rulesList
 
-inlineEpsilonNtInSet :: NonTerminal -> Set.Set [Either NonTerminal Terminal] -> Set.Set [Either NonTerminal Terminal]
-inlineEpsilonNtInSet nt ruleSet =
-    let inlinedEpsilonSet = Set.map (\x -> filter (/= Left nt) x) ruleSet
-    in Set.union ruleSet inlinedEpsilonSet
+inlineEpsilonNt :: NonTerminal -> ProductionRules -> ProductionRules
+inlineEpsilonNt nt rules =
+    let ruleRemoved = removeEpsilonNt nt rules
+        rulesList = Map.lookup nt ruleRemoved
+    in case rulesList of
+        Just list -> Map.map (inlineEpsilonNt' nt) rules
+        Nothing -> Map.map (removeNt nt) rules
+
+inlineEpsilonNt' :: NonTerminal -> [RightSide] -> [RightSide]
+inlineEpsilonNt' nt rules =
+    let inlinedEpsilonRightSides = map (\x -> filter (/= Left nt) x) rules
+    in List.union rules inlinedEpsilonRightSides
 
 removeEpsilonNt :: NonTerminal -> ProductionRules -> ProductionRules
 removeEpsilonNt nt rules =
-    let Just ruleSet = Map.lookup nt rules
-        removedEpsilonRhs = Set.delete [] ruleSet
-    in if Set.null ruleSet
+    let Just rightSides = Map.lookup nt rules
+        removedEpsilonRhs = List.delete [] rightSides
+    in if List.null rightSides
         then Map.delete nt rules
         else Map.insert nt removedEpsilonRhs rules
 
-removeNtInSet :: NonTerminal -> Set.Set [Either NonTerminal Terminal] -> Set.Set [Either NonTerminal Terminal]
-removeNtInSet nt ruleSet = Set.map (\x -> filter (/= Left nt) x) ruleSet
+removeNt :: NonTerminal -> [RightSide] -> [RightSide]
+removeNt nt rules = map (\x -> filter (/= Left nt) x) rules
 
 eliminateLongRhsRules :: Grammar -> Grammar
 eliminateLongRhsRules g =
@@ -102,28 +103,27 @@ eliminateLongRhsRules g =
 eliminateLongRhsRules' :: Grammar -> State Int Grammar
 eliminateLongRhsRules' (Grammar nonTerminals terminals start rules) = do
     let rulesList = Map.toList rules
-        folder (rules, replacements) (nt, destinationSet) = do
-            (newRuleSet, newReplacements) <- replaceLongRhsRules destinationSet replacements
-            let newRules = Map.insert nt newRuleSet rules
+        folder (rules, replacements) (nt, destinations) = do
+            (newRightSides, newReplacements) <- replaceLongRhsRules destinations replacements
+            let newRules = Map.insert nt newRightSides rules
             return (newRules, newReplacements)
     (newRules, replacements) <- foldM folder (Map.empty, []) rulesList
-    let newRules' = foldl (\rules ((nt1, nt2), newNt) -> Map.insert newNt (Set.singleton [Left nt1, Left nt2]) rules) newRules replacements
+    let newRules' = foldl (\rules ((nt1, nt2), newNt) -> Map.insert newNt [[Left nt1, Left nt2]] rules) newRules replacements
         addedNonTerminals = map snd replacements
         newNonTerminals = List.union nonTerminals addedNonTerminals
     return (Grammar newNonTerminals terminals start newRules')
 
-replaceLongRhsRules :: Set.Set [Either NonTerminal Terminal] -> [((NonTerminal, NonTerminal), NonTerminal)]
-    -> State Int (Set.Set [Either NonTerminal Terminal], [((NonTerminal, NonTerminal), NonTerminal)])
-replaceLongRhsRules ruleSet replacements = do
+replaceLongRhsRules :: [RightSide] -> [((NonTerminal, NonTerminal), NonTerminal)]
+    -> State Int ([RightSide], [((NonTerminal, NonTerminal), NonTerminal)])
+replaceLongRhsRules rightSides replacements = do
     let folder (rules, replacements) rhs = do
             (shortenedRhs, newReplacements) <- shortenRhs rhs replacements
-            let newRules = Set.insert shortenedRhs rules
+            let newRules = shortenedRhs:rules
             return (newRules, newReplacements)
-        rulesList = Set.toList ruleSet
-    foldM folder (Set.empty, replacements) rulesList
+    foldM folder ([], replacements) rightSides
 
-shortenRhs :: [Either NonTerminal Terminal] -> [((NonTerminal, NonTerminal), NonTerminal)]
-    -> State Int ([Either NonTerminal Terminal], [((NonTerminal, NonTerminal), NonTerminal)])
+shortenRhs :: RightSide -> [((NonTerminal, NonTerminal), NonTerminal)]
+    -> State Int (RightSide, [((NonTerminal, NonTerminal), NonTerminal)])
 shortenRhs rhs replacements =
     if length rhs <= 2
         then return (rhs, replacements)
@@ -140,21 +140,21 @@ eliminateStartSymbol :: Grammar -> Grammar
 eliminateStartSymbol (Grammar nonTerminals terminals start rules) =
     let newStartSymbol = start ++ "0"
         newNonTerminals = newStartSymbol:nonTerminals
-        newRules = Map.insert newStartSymbol (Set.singleton [Left start]) rules
+        newRules = Map.insert newStartSymbol [[Left start]] rules
     in Grammar newNonTerminals terminals newStartSymbol newRules
 
 eliminateNonSolitaryTerminals :: Grammar -> Grammar
 eliminateNonSolitaryTerminals g@(Grammar nonTerminals terminals start rules) =
     let terminalReplacementPairs = zip terminals $ map (("N"++).show) [0..]
         terminalReplacements = Map.fromList terminalReplacementPairs
-        newRules = Map.map (Set.map $ replaceTerminals terminalReplacements) rules
-        rulesToAdd = Map.fromList $ map (\(t, nt) -> (nt, Set.singleton [Right t])) terminalReplacementPairs
+        newRules = Map.map (map $ replaceTerminals terminalReplacements) rules
+        rulesToAdd = Map.fromList $ map (\(t, nt) -> (nt, [[Right t]])) terminalReplacementPairs
         newRules' = Map.union newRules rulesToAdd
         nonTerminalsToAdd = map snd terminalReplacementPairs
         newNonTerminals = List.union nonTerminals nonTerminalsToAdd
     in Grammar newNonTerminals terminals start newRules'
 
-replaceTerminals :: Map.Map NonTerminal Terminal -> [Either NonTerminal Terminal] -> [Either NonTerminal Terminal]
+replaceTerminals :: Map.Map NonTerminal Terminal -> RightSide -> RightSide
 replaceTerminals replacements = map replace where
     replace x = case x of
         Left n -> Left n
@@ -173,8 +173,8 @@ parseGrammar definitionStr =
 extractTerminals :: ProductionRules -> [Terminal]
 extractTerminals rules =
     let rightSides = Map.elems rules
-        rightSidesSet = foldl1 Set.union rightSides
-        joinedRightSide = Set.foldl (++) [] rightSidesSet
+        rightSidesList = concat rightSides
+        joinedRightSide = concat rightSidesList
         terminals = foldl filterTerminals [] joinedRightSide
     in nub terminals
 
@@ -183,7 +183,7 @@ filterTerminals acc x = case x of
     Left nt -> acc
     Right t -> t:acc
 
-parseLine :: String -> (NonTerminal, (Set.Set [Either NonTerminal Terminal]))
+parseLine :: String -> (NonTerminal, [RightSide])
 parseLine line =
     let (nt:_:rightSide) = words line
         destinations = filter (/="|") rightSide
@@ -192,8 +192,8 @@ parseLine line =
         stripEpsilon x = case x of
             [Right "e"] -> []
             x -> x
-        destinationSet = Set.fromList $ map (stripEpsilon.(map terminalOrNonTerminal)) destinations'
-    in (nt, destinationSet)
+        destinationList = map (stripEpsilon.(map terminalOrNonTerminal)) destinations'
+    in (nt, destinationList)
 
 parseDestination :: String -> [String]
 parseDestination "" = []
@@ -214,7 +214,7 @@ toString (Grammar _ _ start rules) =
             Left nt -> nt
             Right t -> t
         ruleToString nt destinations =
-            let destinationStrings = Set.toList $ Set.map destinationToString destinations
+            let destinationStrings = map destinationToString destinations
                 destinationToString dest = if null dest
                     then "e"
                     else foldl1 (++) $ map terminalOrNonTerminalToString dest
